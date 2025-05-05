@@ -30,13 +30,14 @@ def estimate_resonance_bandwidth(w, magnitude_db, peak_idx):
     
     return bandwidth
 
-def synthesize_harmonics(f0_track, times, sr, n_harmonics=5):
+def synthesize_harmonics(f0_track, times, sr, n_harmonics=5, audio_length=None):
     """
     Synthesize audio using only harmonics of F0.
     """
     # Create time array for full audio
-    duration = times[-1]
-    t = np.arange(0, duration, 1/sr)
+    if audio_length is None:
+        audio_length = int(times[-1] * sr)
+    t = np.arange(audio_length) / sr
     
     # Interpolate F0 to audio sample rate
     f0_interp = interp1d(times, f0_track, kind='linear', 
@@ -246,12 +247,18 @@ def extract_and_synthesize_all(y, sr):
     print()
     
     # Synthesize harmonics
-    y_harmonics = synthesize_harmonics(f0_track, times, sr, n_harmonics=5)
+    y_harmonics = synthesize_harmonics(f0_track, times, sr, n_harmonics=5, audio_length=len(y))
     
     # Filter formants from original audio
     y_formants = filter_by_formant_tracks(y, sr, formants, times)
+
+    for yf in y_formants:
+        print("formant length", len(yf))
+
+    print("harmonic length", len(y_harmonics))
     
     # Create combined versions
+    # Weights are chosen empirically to balance the harmonics and formants
     y_all_formants = np.sum(y_formants, axis=0) * 0.5  # Sum all formants
     y_harmonics_plus_formants = y_harmonics * 0.3 + y_all_formants * 0.7
     
