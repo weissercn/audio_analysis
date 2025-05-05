@@ -52,21 +52,27 @@ def plot_spectrogram_with_pause_boundaries(y, sr):
     plt.vlines(pause_ends, 0, sr/2, color='white', linestyle='-', alpha=0.7, label='Pause ends')
     plt.legend(loc='upper right')
 
-def plot_spectrogram_mel(y, sr):
+def plot_spectrogram_mel(y, sr, spec="", save_spec=None):
     # Plot Mel Spectrogram
     spectrogram = librosa.feature.melspectrogram(y=y, sr=sr)
     # Convert to decibels for better visualization
     spectrogram_db = librosa.power_to_db(spectrogram, ref=np.max)
 
+    plt.figure(figsize=(12, 4))
     # Display the mel spectrogram
-    img1 = librosa.display.specshow(spectrogram_db, 
+    img = librosa.display.specshow(spectrogram_db, 
                                     x_axis='time', 
                                     y_axis='mel', 
                                     sr=sr)
-    plt.title('Mel Spectrogram')
-    plt.xlabel('Time')
+    plt.colorbar(img, format='%+2.0f dB') # Add a color bar to show dB scale
+    plt.title(f'Mel Spectrogram {spec}')
+    plt.xlabel('Time (s)')
     plt.ylabel('Mel Frequency')
-    
+    plt.tight_layout()
+    if save_spec:
+        plt.savefig(f'plots/mel_spectrogram_plot_{spec}.png')
+        print(f"Saved mel_spectrogram_plot_{spec}.png")
+
 def plot_mfcc(y, sr):
     mfcc = librosa.feature.mfcc(y=y, sr=sr)
     plt.figure(figsize=(12, 4))

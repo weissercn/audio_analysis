@@ -111,7 +111,7 @@ def filter_by_formant_tracks(y, sr, formants, times, bandwidths=None):
     
     return y_formants
 
-def extract_formants_from_envelope(y, sr, n_formants=4, frame_length=0.025, hop_length=0.010):
+def extract_formants_from_envelope(y, sr, n_formants=4, f0_times=None, frame_length=0.025, hop_length=0.010):
     """
     Extract formants using spectral envelope analysis to avoid harmonics confusion.
     """
@@ -204,13 +204,18 @@ def extract_formants_from_envelope(y, sr, n_formants=4, frame_length=0.025, hop_
             formants[j] = scipy.signal.medfilt(formants[j], kernel_size=5)
             # Smooth
             formants[j] = gaussian_filter1d(formants[j], sigma=3)
+
+    if f0_times is not None:
+        # Ensure same time axis
+        if len(f0_times) != len(times):
+            formants_interp = np.zeros((4, len(f0_times)))
+            for i in range(4):
+                formants_interp[i] = np.interp(f0_times, times, formants[i])
+            formants = formants_interp
     
     return formants, times
 
-def extract_and_synthesize_all(y, sr):
-    """
-    Extract and synthesize harmonics and formants separately.
-    """
+def get_f0_track(y, sr):
     # Extract F0
     f0_track, _, _ = librosa.pyin(y, fmin=80, fmax=300, sr=sr)
     times = librosa.times_like(f0_track, sr=sr)
@@ -219,49 +224,9 @@ def extract_and_synthesize_all(y, sr):
     valid_f0 = ~np.isnan(f0_track)
     if np.any(valid_f0):
         f0_track = np.interp(times, times[valid_f0], f0_track[valid_f0])
-    
-    # Extract formants
-    formants, formant_times = extract_formants_from_envelope(y, sr, n_formants=4)
-    
-    # Ensure same time axis
-    if len(times) != len(formant_times):
-        formants_interp = np.zeros((4, len(times)))
-        for i in range(4):
-            formants_interp[i] = np.interp(times, formant_times, formants[i])
-        formants = formants_interp
-    
-    # Print average frequencies
-    print("Average frequencies:")
-    print(f"F0: {np.mean(f0_track):.1f} Hz")
-    
-    # Calculate and print harmonic frequencies
-    for i in range(5):  # For 5 harmonics
-        harmonic_freq = np.mean(f0_track) * (i + 1)
-        print(f"H{i+1}: {harmonic_freq:.1f} Hz")
-    
-    # Print formant frequencies
-    for i in range(4):
-        valid_formants = formants[i][formants[i] > 0]
-        if len(valid_formants) > 0:
-            print(f"F{i+1}: {np.mean(valid_formants):.1f} Hz")
-    print()
-    
-    # Synthesize harmonics
-    y_harmonics = synthesize_harmonics(f0_track, times, sr, n_harmonics=5, audio_length=len(y))
-    
-    # Filter formants from original audio
-    y_formants = filter_by_formant_tracks(y, sr, formants, times)
+    return f0_track, times
 
-    for yf in y_formants:
-        print("formant length", len(yf))
-
-    print("harmonic length", len(y_harmonics))
-    
-    # Create combined versions
-    # Weights are chosen empirically to balance the harmonics and formants
-    y_all_formants = np.sum(y_formants, axis=0) * 0.5  # Sum all formants
-    y_harmonics_plus_formants = y_harmonics * 0.3 + y_all_formants * 0.7
-    
+def plot_formant_harmonics_comparison(y,y_harmonics, y_all_formants):
     # Visualize
     fig, axes = plt.subplots(3, 1, figsize=(14, 10))
     
@@ -287,6 +252,7 @@ def extract_and_synthesize_all(y, sr):
     plt.tight_layout()
     plt.show()
 
+def plot_spectrogram_with_harmonics_and_formants_labeled(y, sr, f0_track, formants, times):
     # Additional spectrogram with harmonics and formants
     fig, ax = plt.subplots(figsize=(12, 4))
     
@@ -319,42 +285,31 @@ def extract_and_synthesize_all(y, sr):
     fig.colorbar(img, ax=ax, format='%+2.0f dB')
     plt.tight_layout()
     plt.show()
-    
-    return {
-        'original': y,
-        'harmonics': y_harmonics,
-        'formants': y_formants,
-        'all_formants': y_all_formants,
-        'combined': y_harmonics_plus_formants,
-        'f0_track': f0_track,
-        'formant_tracks': formants,
-        'times': times
-    }
 
-def plot_formant_harmonics_comparison(results, sr):
+def plot_spectrogram_with_harmonics_and_formants_separated(y,y_harmonics, y_all_formants, y_harmonics_plus_formants, sr):
     # Create a spectrogram comparison
     fig, axes = plt.subplots(4, 1, figsize=(14, 12))
 
         # Original spectrogram
-    D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(results['original'])), ref=np.max)
+    D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(y)), ref=np.max)
     librosa.display.specshow(D_orig, sr=sr, x_axis='time', y_axis='log', ax=axes[0])
     axes[0].set_title('Original Audio')
     axes[0].set_ylim(0, 5000)
 
     # Harmonics spectrogram
-    D_harm = librosa.amplitude_to_db(np.abs(librosa.stft(results['harmonics'])), ref=np.max)
+    D_harm = librosa.amplitude_to_db(np.abs(librosa.stft(y_harmonics)), ref=np.max)
     librosa.display.specshow(D_harm, sr=sr, x_axis='time', y_axis='log', ax=axes[1])
     axes[1].set_title('Harmonics Only')
     axes[1].set_ylim(0, 5000)
 
     # Formants spectrogram
-    D_form = librosa.amplitude_to_db(np.abs(librosa.stft(results['all_formants'])), ref=np.max)
+    D_form = librosa.amplitude_to_db(np.abs(librosa.stft(y_all_formants)), ref=np.max)
     librosa.display.specshow(D_form, sr=sr, x_axis='time', y_axis='log', ax=axes[2])
     axes[2].set_title('All Formants Combined')
     axes[2].set_ylim(0, 5000)
 
     # Combined spectrogram
-    D_comb = librosa.amplitude_to_db(np.abs(librosa.stft(results['combined'])), ref=np.max)
+    D_comb = librosa.amplitude_to_db(np.abs(librosa.stft(y_harmonics_plus_formants)), ref=np.max)
     librosa.display.specshow(D_comb, sr=sr, x_axis='time', y_axis='log', ax=axes[3])
     axes[3].set_title('Harmonics + Formants Combined')
     axes[3].set_ylim(0, 5000)
@@ -362,6 +317,66 @@ def plot_formant_harmonics_comparison(results, sr):
     plt.tight_layout()
     plt.show()
 
+def compute_and_plot_formants_harmonics(y, sr):
+    f0_track, times = get_f0_track(y, sr)
+
+    # Extract formants
+    formants, formant_times = extract_formants_from_envelope(y, sr, n_formants=4, f0_times=times)
+    # Synthesize harmonics
+    y_harmonics = synthesize_harmonics(f0_track, times, sr, n_harmonics=5, audio_length=len(y))
+
+    # Filter formants from original audio
+    y_formants = filter_by_formant_tracks(y, sr, formants, times)
+
+    # Create combined versions
+    # Weights are chosen empirically to balance the harmonics and formants
+    y_all_formants = np.sum(y_formants, axis=0) * 0.5  # Sum all formants
+    y_harmonics_plus_formants = y_harmonics * 0.3 + y_all_formants * 0.7
+
+    # Print average frequencies
+    print("Average frequencies:")
+    print(f"F0: {np.mean(f0_track):.1f} Hz")
+
+    # Calculate and print harmonic frequencies
+    for i in range(5):  # For 5 harmonics
+        harmonic_freq = np.mean(f0_track) * (i + 1)
+        print(f"H{i+1}: {harmonic_freq:.1f} Hz")
+
+    # Print formant frequencies
+    for i in range(4):
+        valid_formants = formants[i][formants[i] > 0]
+        if len(valid_formants) > 0:
+            print(f"F{i+1}: {np.mean(valid_formants):.1f} Hz")
+    print()
+
+    plot_spectrogram_with_harmonics_and_formants_labeled(y, sr, f0_track, formants, times)
+    plot_spectrogram_with_harmonics_and_formants_separated(y,y_harmonics, y_all_formants, y_harmonics_plus_formants, sr)
+
+
+    # Play all versions
+    print("1. Original audio:")
+    display(Audio(data=y, rate=sr))
+
+    print("\n2. Harmonics only (buzzy/robotic sound):")
+    display(Audio(data=y_harmonics, rate=sr))
+
+    print("\n3. Formant 1 only:")
+    display(Audio(data=y_formants[0], rate=sr))
+
+    print("\n4. Formant 2 only:")
+    display(Audio(data=y_formants[1], rate=sr))
+
+    print("\n5. Formant 3 only:")
+    display(Audio(data=y_formants[2], rate=sr))
+
+    print("\n6. Formant 4 only:")
+    display(Audio(data=y_formants[3], rate=sr))
+
+    print("\n7. All formants combined:")
+    display(Audio(data=y_all_formants, rate=sr))
+
+    print("\n8. Harmonics + Formants combined:")
+    display(Audio(data=y_harmonics_plus_formants, rate=sr))
 
 
 
