@@ -1,3 +1,5 @@
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
@@ -9,8 +11,18 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.signal import butter, filtfilt, find_peaks, freqz, lfilter
 
 
-def estimate_resonance_bandwidth(w, magnitude_db, peak_idx):
-    """Estimate bandwidth of resonance peak."""
+def estimate_resonance_bandwidth(w: np.ndarray, magnitude_db: np.ndarray, peak_idx: int) -> float:
+    """
+    Estimate the bandwidth of a resonance peak at -3dB from its maximum.
+
+    Args:
+        w: Frequency array in Hz
+        magnitude_db: Magnitude spectrum in dB
+        peak_idx: Index of the peak in the arrays
+
+    Returns:
+        float: Bandwidth in Hz at -3dB from peak
+    """
     peak_mag = magnitude_db[peak_idx]
     threshold = peak_mag - 3  # -3dB bandwidth
     
@@ -30,9 +42,20 @@ def estimate_resonance_bandwidth(w, magnitude_db, peak_idx):
     
     return bandwidth
 
-def synthesize_harmonics(f0_track, times, sr, n_harmonics=5, audio_length=None):
+def synthesize_harmonics(f0_track: np.ndarray, times: np.ndarray, sr: int, 
+                        n_harmonics: int = 5, audio_length: Optional[int] = None) -> np.ndarray:
     """
     Synthesize audio using only harmonics of F0.
+
+    Args:
+        f0_track: Array of fundamental frequency values over time
+        times: Time points corresponding to f0_track values
+        sr: Sample rate in Hz
+        n_harmonics: Number of harmonics to synthesize
+        audio_length: Length of output audio in samples. If None, uses times[-1] * sr
+
+    Returns:
+        np.ndarray: Synthesized audio signal containing only harmonics
     """
     # Create time array for full audio
     if audio_length is None:
@@ -62,9 +85,20 @@ def synthesize_harmonics(f0_track, times, sr, n_harmonics=5, audio_length=None):
     return y_harmonics
 
 
-def filter_by_formant_tracks(y, sr, formants, times, bandwidths=None):
+def filter_by_formant_tracks(y: np.ndarray, sr: int, formants: np.ndarray, 
+                           times: np.ndarray, bandwidths: Optional[List[int]] = None) -> List[np.ndarray]:
     """
     Filter original audio to isolate formants using time-varying filters.
+
+    Args:
+        y: Input audio signal
+        sr: Sample rate in Hz
+        formants: Array of formant frequencies over time (n_formants x n_frames)
+        times: Time points corresponding to formant values
+        bandwidths: List of bandwidths for each formant in Hz. If None, uses default values
+
+    Returns:
+        List[np.ndarray]: List of filtered audio signals, one for each formant
     """
     if bandwidths is None:
         bandwidths = [200, 300, 400, 500]  # Default bandwidths for F1-F4
@@ -94,7 +128,9 @@ def filter_by_formant_tracks(y, sr, formants, times, bandwidths=None):
             if f_center > 0:
                 # Design bandpass filter
                 f_low = max(f_center - bandwidths[i]/2, 50)
-                f_high = min(f_center + bandwidths[i]/2, sr/2 - 100) # Nyquist: the highest frequency component that can be accurately represented in a sampled signal without aliasing.
+                # Nyquist: the highest frequency component that can be accurately represented in a sampled signal 
+                #without aliasing.
+                f_high = min(f_center + bandwidths[i]/2, sr/2 - 100)
                 
                 # For stability, use a second-order section (SOS) filter.
                 # Butterworth filter: a type of filter that is known for its flat frequency response in the passband and stopband.
@@ -113,9 +149,25 @@ def filter_by_formant_tracks(y, sr, formants, times, bandwidths=None):
     
     return y_formants
 
-def extract_formants_from_envelope(y, sr, n_formants=4, f0_times=None, frame_length=0.025, hop_length=0.010):
+def extract_formants_from_envelope(y: np.ndarray, sr: int, n_formants: int = 4, 
+                                 f0_times: Optional[np.ndarray] = None,
+                                 frame_length: float = 0.025, 
+                                 hop_length: float = 0.010) -> Tuple[np.ndarray, np.ndarray]:
     """
     Extract formants using spectral envelope analysis to avoid harmonics confusion.
+
+    Args:
+        y: Input audio signal
+        sr: Sample rate in Hz
+        n_formants: Number of formants to extract
+        f0_times: Optional time points for F0 track. If provided, formants will be interpolated to match
+        frame_length: Frame length in seconds
+        hop_length: Hop length in seconds
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: 
+            - Array of formant frequencies (n_formants x n_frames)
+            - Time points corresponding to formant values
     """
     frame_samples = int(frame_length * sr)
     hop_samples = int(hop_length * sr)
@@ -217,7 +269,19 @@ def extract_formants_from_envelope(y, sr, n_formants=4, f0_times=None, frame_len
     
     return formants, times
 
-def get_f0_track(y, sr):
+def get_f0_track(y: np.ndarray, sr: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Extract fundamental frequency (F0) track from audio signal.
+
+    Args:
+        y: Input audio signal
+        sr: Sample rate in Hz
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]:
+            - Array of F0 values over time
+            - Time points corresponding to F0 values
+    """
     # Extract F0
     f0_track, _, _ = librosa.pyin(y, fmin=80, fmax=300, sr=sr)
     times = librosa.times_like(f0_track, sr=sr)
@@ -228,7 +292,17 @@ def get_f0_track(y, sr):
         f0_track = np.interp(times, times[valid_f0], f0_track[valid_f0])
     return f0_track, times
 
-def plot_formant_harmonics_comparison(y,y_harmonics, y_all_formants):
+def plot_formant_harmonics_comparison(y: np.ndarray, y_harmonics: np.ndarray, 
+                                    y_all_formants: np.ndarray, sr: int) -> None:
+    """
+    Plot comparison of original audio, harmonics, and formants.
+
+    Args:
+        y: Original audio signal
+        y_harmonics: Synthesized harmonics signal
+        y_all_formants: Combined formants signal
+        sr: Sample rate in Hz
+    """
     # Visualize
     fig, axes = plt.subplots(3, 1, figsize=(14, 10))
     
@@ -254,7 +328,20 @@ def plot_formant_harmonics_comparison(y,y_harmonics, y_all_formants):
     plt.tight_layout()
     plt.show()
 
-def plot_spectrogram_with_harmonics_and_formants_labeled(y, sr, f0_track, formants, times):
+def plot_spectrogram_with_harmonics_and_formants_labeled(y: np.ndarray, sr: int, 
+                                                       f0_track: np.ndarray,
+                                                       formants: np.ndarray, 
+                                                       times: np.ndarray) -> None:
+    """
+    Plot spectrogram with labeled harmonics and formants.
+
+    Args:
+        y: Input audio signal
+        sr: Sample rate in Hz
+        f0_track: Array of F0 values over time
+        formants: Array of formant frequencies (n_formants x n_frames)
+        times: Time points corresponding to F0 and formant values
+    """
     # Additional spectrogram with harmonics and formants
     fig, ax = plt.subplots(figsize=(12, 4))
     
@@ -288,11 +375,25 @@ def plot_spectrogram_with_harmonics_and_formants_labeled(y, sr, f0_track, forman
     plt.tight_layout()
     plt.show()
 
-def plot_spectrogram_with_harmonics_and_formants_separated(y,y_harmonics, y_all_formants, y_harmonics_plus_formants, sr):
+def plot_spectrogram_with_harmonics_and_formants_separated(y: np.ndarray,
+                                                         y_harmonics: np.ndarray, 
+                                                         y_all_formants: np.ndarray,
+                                                         y_harmonics_plus_formants: np.ndarray,
+                                                         sr: int) -> None:
+    """
+    Plot separate spectrograms comparing original audio, harmonics, formants, and their combination.
+
+    Args:
+        y: Original audio signal
+        y_harmonics: Synthesized harmonics signal
+        y_all_formants: Combined formants signal
+        y_harmonics_plus_formants: Combined harmonics and formants signal
+        sr: Sample rate in Hz
+    """
     # Create a spectrogram comparison
     fig, axes = plt.subplots(4, 1, figsize=(14, 12))
 
-        # Original spectrogram
+    # Original spectrogram
     D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(y)), ref=np.max)
     librosa.display.specshow(D_orig, sr=sr, x_axis='time', y_axis='log', ax=axes[0])
     axes[0].set_title('Original Audio')
@@ -319,7 +420,22 @@ def plot_spectrogram_with_harmonics_and_formants_separated(y,y_harmonics, y_all_
     plt.tight_layout()
     plt.show()
 
-def compute_and_plot_formants_harmonics(y, sr):
+def compute_and_plot_formants_harmonics(y: np.ndarray, sr: int) -> None:
+    """
+    Compute and visualize formants and harmonics from audio signal.
+
+    This function performs a complete analysis of the input audio signal:
+    1. Extracts F0 track
+    2. Extracts formants
+    3. Synthesizes harmonics
+    4. Filters formants
+    5. Creates visualizations
+    6. Plays audio samples
+
+    Args:
+        y: Input audio signal
+        sr: Sample rate in Hz
+    """
     f0_track, times = get_f0_track(y, sr)
 
     # Extract formants
@@ -352,8 +468,7 @@ def compute_and_plot_formants_harmonics(y, sr):
     print()
 
     plot_spectrogram_with_harmonics_and_formants_labeled(y, sr, f0_track, formants, times)
-    plot_spectrogram_with_harmonics_and_formants_separated(y,y_harmonics, y_all_formants, y_harmonics_plus_formants, sr)
-
+    plot_spectrogram_with_harmonics_and_formants_separated(y, y_harmonics, y_all_formants, y_harmonics_plus_formants, sr)
 
     # Play all versions
     print("1. Original audio:")

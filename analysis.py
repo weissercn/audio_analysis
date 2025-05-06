@@ -1,10 +1,21 @@
+from typing import List, Literal, Tuple, Union
+
 import librosa
 import numpy as np
 from scipy import signal
 from scipy.signal import istft, stft
 
 
-def reduce_noise_from_stft_first_second(y, sr):
+def reduce_noise_from_stft_first_second(y: np.ndarray, sr: int) -> np.ndarray:
+    """Reduce noise from audio using spectral subtraction based on first second of audio.
+    
+    Args:
+        y: Audio time series as numpy array
+        sr: Sampling rate of the audio signal
+        
+    Returns:
+        np.ndarray: Noise-reduced audio time series
+    """
     # Parameters for STFT
     frame_length = 2048
     hop_length = 512
@@ -35,7 +46,25 @@ def reduce_noise_from_stft_first_second(y, sr):
     
     return y_reduced
 
-def reduce_noise(y, sr, type="wiener"):
+def reduce_noise(y: np.ndarray, sr: int, type: Literal["wiener", "first_second", "medfilt", "nmf", "adaptive"] = "wiener") -> np.ndarray:
+    """Apply various noise reduction techniques to audio signal.
+    
+    Args:
+        y: Audio time series as numpy array
+        sr: Sampling rate of the audio signal
+        type: Type of noise reduction to apply. Options:
+            - "wiener": Wiener filter
+            - "first_second": Spectral subtraction using first second
+            - "medfilt": Median filtering
+            - "nmf": Non-negative matrix factorization
+            - "adaptive": Adaptive filtering with preemphasis
+            
+    Returns:
+        np.ndarray: Noise-reduced audio time series
+        
+    Raises:
+        ValueError: If invalid noise reduction type is specified
+    """
     if type == "first_second":
         y_clean = reduce_noise_from_stft_first_second(y, sr)
     elif type == "wiener":
@@ -65,7 +94,18 @@ def reduce_noise(y, sr, type="wiener"):
     return y_clean
 
 
-def compute_pause_boundaries(y, sr):
+def compute_pause_boundaries(y: np.ndarray, sr: int) -> Tuple[List[float], List[float]]:
+    """Compute the start and end times of pauses in audio.
+    
+    Args:
+        y: Audio time series as numpy array
+        sr: Sampling rate of the audio signal
+        
+    Returns:
+        Tuple[List[float], List[float]]: Two lists containing:
+            - List of pause start times in seconds
+            - List of pause end times in seconds
+    """
     # Calculate root mean square energy
     rms = librosa.feature.rms(y=y)[0]
 
@@ -98,7 +138,16 @@ def compute_pause_boundaries(y, sr):
         pause_ends.append(times[-1])
     return pause_starts, pause_ends
 
-def split_audio_at_pause_boundaries(y, sr):
+def split_audio_at_pause_boundaries(y: np.ndarray, sr: int) -> List[np.ndarray]:
+    """Split audio into segments at detected pause boundaries.
+    
+    Args:
+        y: Audio time series as numpy array
+        sr: Sampling rate of the audio signal
+        
+    Returns:
+        List[np.ndarray]: List of audio segments, each as a numpy array
+    """
     pause_starts, pause_ends = compute_pause_boundaries(y, sr)
     
     # Split audio at pause boundaries
