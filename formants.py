@@ -94,10 +94,12 @@ def filter_by_formant_tracks(y, sr, formants, times, bandwidths=None):
             if f_center > 0:
                 # Design bandpass filter
                 f_low = max(f_center - bandwidths[i]/2, 50)
-                f_high = min(f_center + bandwidths[i]/2, sr/2 - 100)
+                f_high = min(f_center + bandwidths[i]/2, sr/2 - 100) # Nyquist: the highest frequency component that can be accurately represented in a sampled signal without aliasing.
                 
+                # For stability, use a second-order section (SOS) filter.
+                # Butterworth filter: a type of filter that is known for its flat frequency response in the passband and stopband.
                 sos = butter(4, [f_low, f_high], btype='bandpass', fs=sr, output='sos')
-                
+
                 # Apply filter
                 chunk_filtered = scipy.signal.sosfiltfilt(sos, chunk)
                 
@@ -105,8 +107,8 @@ def filter_by_formant_tracks(y, sr, formants, times, bandwidths=None):
                 window = scipy.signal.windows.hann(len(chunk))
                 y_filtered[j:chunk_end] += chunk_filtered * window
         
-        # Normalize
-        y_filtered = y_filtered / (np.max(np.abs(y_filtered)) + 1e-8) * 0.8
+        # Normalize, 0.8 to avoid clipping
+        y_filtered = y_filtered / (np.max(np.abs(y_filtered)) + 1e-8) * 0.8 
         y_formants.append(y_filtered)
     
     return y_formants
@@ -118,7 +120,7 @@ def extract_formants_from_envelope(y, sr, n_formants=4, f0_times=None, frame_len
     frame_samples = int(frame_length * sr)
     hop_samples = int(hop_length * sr)
     
-    # Frame the signal
+    # Frame the signal, hop_samples is for overlap
     frames = librosa.util.frame(y, frame_length=frame_samples, hop_length=hop_samples)
     n_frames = frames.shape[1]
     times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_samples)
